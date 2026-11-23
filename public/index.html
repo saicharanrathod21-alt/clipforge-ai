@@ -1,0 +1,169 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipForge AI - Video Studio</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0d1020;color:#f5f6ff;font-family:Arial,sans-serif;padding:20px}
+main{max-width:850px;margin:auto}
+h1{color:#a99aff}
+p{color:#b8bfd6;line-height:1.6}
+.panel{background:#191e35;border:1px solid #343b5b;border-radius:16px;padding:20px;margin:18px 0}
+label{display:block;margin:14px 0 7px}
+textarea,select{width:100%;padding:13px;border-radius:9px;background:#101528;color:white;border:1px solid #485171;font-size:16px}
+textarea{min-height:130px}
+button{padding:13px;border:0;border-radius:9px;background:#8876f5;color:white;font-weight:bold;font-size:15px;cursor:pointer;margin-top:14px}
+.primary{width:100%}
+button:disabled{opacity:.5}
+.scene{border-top:1px solid #39415e;padding:13px 0}
+.small{color:#59d7c4;font-size:12px}
+#status{color:#ffd18a;margin-top:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>✦ ClipForge AI</h1>
+<p>Create video scripts and storyboards from your ideas.</p>
+
+<section class="panel">
+<h2>1. Describe your video</h2>
+
+<label for="prompt">What video do you want?</label>
+<textarea id="prompt" placeholder="Example: Explain Articles 1 to 4 of the Indian Constitution in simple language."></textarea>
+
+<label for="style">Video style</label>
+<select id="style">
+<option>AI presenter</option>
+<option>Anime animation</option>
+<option>Cinematic video</option>
+<option>Educational motion graphics</option>
+</select>
+
+<label for="language">Language</label>
+<select id="language">
+<option>English</option>
+<option>Hindi</option>
+<option>Telugu</option>
+<option>Tamil</option>
+</select>
+
+<label for="duration">Video duration</label>
+<select id="duration">
+<option>30 seconds</option>
+<option>60 seconds</option>
+<option>2 minutes</option>
+<option>5 minutes</option>
+<option>10 minutes</option>
+</select>
+
+<button class="primary" id="generate">✦ Generate Script</button>
+<div id="status"></div>
+</section>
+
+<section class="panel">
+<h2>2. Your video storyboard</h2>
+<div id="preview">Your generated script will appear here.</div>
+<button id="voice" disabled>🔊 Play narration</button>
+<button id="download" disabled>Download script</button>
+<button id="subtitles" disabled>Download subtitles</button>
+</section>
+</main>
+
+<script>
+let result=null;
+const el=id=>document.getElementById(id);
+
+el("generate").onclick=async()=>{
+ const prompt=el("prompt").value.trim();
+ if(!prompt){el("status").textContent="Please enter a video idea.";return;}
+
+ const btn=el("generate");
+ btn.disabled=true;
+ btn.textContent="Generating...";
+ el("status").textContent="Connecting to AI...";
+
+ try{
+  const response=await fetch("/api/script",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({
+    prompt,
+    style:el("style").value,
+    language:el("language").value,
+    duration:el("duration").value
+   })
+  });
+
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Generation failed");
+
+  result=data;
+  el("preview").innerHTML=
+   "<h2>"+safe(data.title)+"</h2><p>"+safe(data.description)+"</p>"+
+   (data.scenes||[]).map((s,i)=>
+    `<div class="scene">
+    <div class="small">SCENE ${i+1} · ${safe(s.time)}</div>
+    <p><b>Narration:</b> ${safe(s.voiceover)}</p>
+    <p><b>Visual:</b> ${safe(s.visual)}</p>
+    <p><b>Subtitle:</b> ${safe(s.subtitle)}</p>
+    </div>`
+   ).join("");
+
+  el("status").textContent="Your script is ready!";
+  ["voice","download","subtitles"].forEach(id=>el(id).disabled=false);
+ }catch(error){
+  el("status").textContent=error.message;
+ }finally{
+  btn.disabled=false;
+  btn.textContent="✦ Generate Script";
+ }
+};
+
+function safe(value){
+ return String(value||"").replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ }[c]));
+}
+
+el("voice").onclick=()=>{
+ if(!result)return;
+ speechSynthesis.cancel();
+ const text=result.scenes.map(s=>s.voiceover).join(" ");
+ const voice=new SpeechSynthesisUtterance(text);
+ voice.lang=({"English":"en-IN","Hindi":"hi-IN","Telugu":"te-IN","Tamil":"ta-IN"})[el("language").value];
+ speechSynthesis.speak(voice);
+};
+
+function save(name,content){
+ const blob=new Blob([content],{type:"text/plain"});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;a.download=name;a.click();
+ URL.revokeObjectURL(url);
+}
+
+el("download").onclick=()=>{
+ if(!result)return;
+ save("video-script.txt",
+ result.title+"\n\n"+result.scenes.map(s=>
+ s.time+"\n"+s.voiceover+"\nVisual: "+s.visual+"\nSubtitle: "+s.subtitle
+ ).join("\n\n"));
+};
+
+el("subtitles").onclick=()=>{
+ if(!result)return;
+ let seconds=0;
+ const format=n=>new Date(n*1000).toISOString().slice(11,19)+",000";
+ const srt=result.scenes.map((s,i)=>{
+  const start=seconds;
+  seconds+=Math.max(3,Math.ceil((s.voiceover||"").split(/\s+/).length/2.5));
+  return `${i+1}\n${format(start)} --> ${format(seconds)}\n${s.subtitle||s.voiceover}\n`;
+ }).join("\n");
+ save("subtitles.srt",srt);
+};
+</script>
+</body>
+</html>
